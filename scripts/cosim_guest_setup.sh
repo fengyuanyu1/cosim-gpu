@@ -51,10 +51,7 @@ if [ -f /home/gem5/load_amdgpu.sh ]; then
     sh /home/gem5/load_amdgpu.sh
 elif [ -f /lib/modules/$(uname -r)/updates/dkms/amdgpu.ko ]; then
     modprobe -v amdgpu \
-        ip_block_mask=0x6f \
-        ppfeaturemask=0 \
-        dpm=0 \
-        audio=0 \
+        ip_block_mask=0x67 \
         ras_enable=0 \
         discovery=2
 else
