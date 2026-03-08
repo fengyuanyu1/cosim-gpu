@@ -1,11 +1,12 @@
 [中文](../zh/cosim-dev-story.md)
 
-# One Day, Two Submodules, Fifteen Bugs: How I Used Claude to Bring a $14,000 MI300X GPU into QEMU
+# Two Days, Two Submodules, Fifteen Bugs: How I Used Claude to Bring a $14,000 MI300X GPU into QEMU
 
 > AMD Instinct MI300X: 304 compute units, 192GB HBM3, retail price over $14,000 per card.
 > Now, all you need is an ordinary x86 Linux machine to run full ROCm/HIP workloads on QEMU.
 
-## Prelude
+## 01
+Origin: When Boot Time Outlasts Debugging
 
 I've been working on GPU simulators for a while. gem5 has a device model for the MI300X and supports full-system simulation, but its KVM fast-forward mode is still slow -- a Linux boot takes 5 minutes, driver loading takes another 5, and every time you debug an MMIO register issue, you're staring at a 10-minute blank wait.
 
@@ -19,14 +20,26 @@ This article documents the pitfalls encountered and key decisions made throughou
 
 ---
 
-## Architecture: The One-Liner Version
+## 02
+Architecture: The One-Liner Version
 
 ```
-QEMU (Q35+KVM, guest Linux + amdgpu driver)
-    <-- Unix socket -->
-gem5 (MI300X GPU model, no kernel)
-    <-- shared memory -->
-/dev/shm/cosim-guest-ram + /dev/shm/mi300x-vram
++-----------------------------+       +----------------------------+
+|  QEMU  (Q35 + KVM)          |       |  gem5  (Docker)            |
+|  +-----------------------+  |       |  +----------------------+  |
+|  | Guest Linux           |  |       |  | MI300X GPU Model     |  |
+|  | amdgpu driver         |  |       |  |  Shader / CU / SDMA  |  |
+|  | ROCm 7.0 / HIP        |  |       |  |  PM4 / Ruby caches   |  |
+|  +----------+------------+  |       |  +---------+------------+  |
+|  +----------v------------+  |       |  +---------v------------+  |
+|  | mi300x-gem5 PCIe dev  |<-------->|  | MI300XGem5Cosim      |  |
+|  +-----------------------+  | Unix  |  +----------------------+  |
+|                             |Socket |                            |
++-----------------------------+       +----------------------------+
+        |                                       |
+        v                                       v
+  /dev/shm/cosim-guest-ram            /dev/shm/mi300x-vram
+  (shared guest RAM)                  (shared GPU VRAM)
 ```
 
 On the QEMU side, there's a full Q35 virtual machine running Ubuntu 24.04 + ROCm 7.0 + amdgpu driver. I added a `mi300x-gem5` PCIe device to QEMU that forwards all MMIO reads/writes and doorbell writes to gem5 via a Unix domain socket.
@@ -46,7 +59,8 @@ The BAR layout must strictly match the amdgpu driver's hardcoded expectations:
 
 ---
 
-## The First Hour: Writing a PCIe Device from Scratch
+## 03
+First Steps: Writing a PCIe Device from Scratch
 
 At 6:30 AM on March 6, I had Claude help me write the QEMU-side `mi300x_gem5.c`. It's a standard QEMU PCIe device, but with several special aspects:
 
@@ -60,7 +74,10 @@ The first version was about 1,500 lines (QEMU 700 + gem5 800), clean in structur
 
 ---
 
-## Bug #1: SIGIO Edge-Triggered Deadlock -- The Most Insidious Problem
+## 04
+Pitfalls: From SIGIO Deadlock to GART Translation
+
+### Bug #1: SIGIO Edge-Triggered Deadlock -- The Most Insidious Problem
 
 gem5's event system uses `FASYNC`/`SIGIO` to monitor socket data. This is **edge-triggered** -- when the socket buffer transitions from empty to non-empty, the kernel sends one `SIGIO`, and only one.
 
@@ -90,9 +107,7 @@ After this fix, MMIO message count jumped from 15 to **35,181**. Driver initiali
 
 **Lesson: Any FASYNC-based I/O handler must drain all pending data. This is inevitable in PCIe indirect register access scenarios.**
 
----
-
-## Bug #2: ip_block_mask -- The Documentation Lies
+### Bug #2: ip_block_mask -- The Documentation Lies
 
 The amdgpu driver has an `ip_block_mask` parameter controlling which IP blocks to initialize. In cosim mode, PSP (security processor) and SMU (power management) aren't needed and must be disabled.
 
@@ -110,9 +125,7 @@ PSP is 4 in the enum but 3 in detection order. `0x6f` = `0110_1111` disables ind
 
 **Lesson: There's no correspondence between the enum values in amd_shared.h and the actual bitmask the driver uses. Only the dmesg detection log tells the truth.**
 
----
-
-## Bug #3: Shared Memory Offset -- Two Systems Disagree on Memory Layout
+### Bug #3: Shared Memory Offset -- Two Systems Disagree on Memory Layout
 
 This bug was the most bizarre. GART page table entries read back as all zeros, the PM4 command processor kept reading opcode 0x0 (NOP) in an infinite loop.
 
@@ -127,9 +140,7 @@ Fix: Replicate Q35's split logic exactly in `mi300_cosim.py`.
 
 **Lesson: When sharing a memory-backend-file, both parties must agree on file offsets for every range, not just total size.**
 
----
-
-## Bug #4: VRAM Addresses Incorrectly Routed Through GART Translation
+### Bug #4: VRAM Addresses Incorrectly Routed Through GART Translation
 
 PM4's `RELEASE_MEM` and SDMA's rptr write-back sometimes target VRAM addresses (address < 16 GiB). The original code fed all addresses through `getGARTAddr()` for translation, but VRAM addresses have no corresponding GART page table entries. Translation failed 861,000+ times, eventually exhausting memory and segfaulting.
 
@@ -141,7 +152,8 @@ The fix used three layers of defense:
 
 ---
 
-## The Moment: HIP Vector Addition PASSED
+## 05
+Validation: HIP Vector Addition PASSED
 
 Early morning of March 8. All bugs fixed, driver loading normal, `rocm-smi` sees MI300X (0x74a0), `rocminfo` reports gfx942 architecture with 320 CUs.
 
@@ -163,11 +175,12 @@ PASSED!
 
 `{1+10, 2+20, 3+30, 4+40}` = `{11, 22, 33, 44}`. hipMalloc, hipMemcpy (host-to-device / device-to-host), kernel dispatch, hipDeviceSynchronize all returned normally. MSI-X interrupts forwarded from gem5 through the event socket to QEMU, QEMU triggered `msix_notify()`, the guest IH handler processed them correctly -- the entire interrupt chain ran end-to-end for the first time.
 
-This was the first time gem5 served as a "remote GPU" driven by a real amdgpu driver inside a QEMU guest for actual computation.
+This is the best practice for gem5 serving as a "remote GPU" driven by a real amdgpu driver inside a QEMU guest for actual computation.
 
 ---
 
-## Collaborating with Claude
+## 06
+Collaboration: Not a Code Tool, but a Systems Partner
 
 The entire development happened in one massive conversation session, resumed as context ran out. The workflow was:
 
@@ -188,7 +201,33 @@ Throughout the process, 15 blocking bugs were resolved one by one. Each fix was 
 
 ---
 
-## One Day's Results
+## 07
+Memory: Knowledge Persistence Across Sessions
+
+Development of this project spanned multiple conversation sessions -- Claude Code's context window is finite, and when a marathon debugging session exhausts the context, a new conversation must pick up where the old one left off. This raises a critical question: how does the new conversation know what was already done, which bugs are fixed, and which are still in progress?
+
+The answer is Claude's auto memory system. Under `~/.claude/projects/`, Claude automatically maintains a set of memory files that record key information across sessions. This project had three memory files:
+
+1. **MEMORY.md** (main memory, 43 lines): project structure, gem5 runtime configuration (Docker image names, build flags, Python versions), DRM Client -13 crash fix record, overall co-simulation status
+2. **cosim-details.md** (architecture details, 69 lines): complete BAR layout, summaries of 8 key fixes, gem5/QEMU launch commands, precise GART page table parameters (ptBase, fbBase, PTE format)
+3. **cosim-debugging.md** (debugging progress, 63 lines): file locations and root causes for each bug, fix status (including intermediate states like "partially fixed"), current blockers
+
+These memory files played several critical roles during actual development:
+
+**Avoiding repeated diagnosis.** When a new session began, Claude didn't need to re-analyze the entire codebase to understand the project state. The memory files recorded that "SIGIO deadlock is fixed, ip_block_mask changed to 0x67, GART fallback implemented," allowing work to resume exactly where it left off.
+
+**Maintaining environment consistency.** gem5 must be built and run inside a specific Docker image (`ghcr.io/gem5/gpu-fs:latest`), QEMU's serial parameters can't be mixed with `-nographic`, disk images need packer with specific flags -- these environment details were scattered across different sessions but unified in the memory files. New sessions wouldn't waste time using wrong Docker images or build parameters.
+
+**Tracking incremental progress.** Debugging isn't linear. The GART translation fix went through a "partially fixed" to "fully fixed" progression -- the memory files faithfully recorded this intermediate state, preventing new sessions from mistakenly assuming the problem was fully resolved and skipping verification.
+
+**Cross-codebase associative indexing.** The memory files recorded key file paths (`mi300x_gem5_cosim.cc`, `amdgpu_vm.cc`, `mi300_cosim.py`), key constants (`ptBase=0x3EE600000`, `fbBase=0x8000000000`), and key formulas (`getGARTAddr()`'s multiply-by-8 transformation). This information was scattered across three different codebases; the memory system consolidated it into an efficient associative index.
+
+If Claude's value in a single conversation is "rapid root cause identification," then the memory system's value is **making that capability persist across sessions**. Without the memory system, every resumed conversation needed 10-15 minutes to rebuild context; with it, a new session could return to the previous working state in seconds.
+
+---
+
+## 08
+Results: What Two Days Delivered
 
 | Metric | Data |
 |--------|------|
@@ -211,7 +250,8 @@ The final system supports:
 
 ---
 
-## What This Means
+## 09
+Significance: A $14,000 GPU Within Reach
 
 The MI300X is AMD's most powerful data center GPU, priced over $14,000 per card -- ordinary developers simply can't get their hands on one. But through QEMU + gem5 co-simulation, you can, on any x86 Linux machine:
 
@@ -233,9 +273,10 @@ cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 
 ---
 
-## Afterword
+## 10
+Afterword: An Amplifier, Not a Replacement
 
-Some might ask: "Can code written in one day be reliable?"
+Some might ask: "Can code written in two days be reliable?"
 
 Honestly, without Claude, this project would have taken at least two weeks. Not because of the code volume -- 2,500 lines isn't much for a PCIe device bridge -- but because the debugging process requires simultaneously understanding the internal behavior of three systems: QEMU's Q35 memory layout, gem5's event-driven I/O model, and the Linux amdgpu driver's IP block initialization sequence. Misunderstanding any single aspect means hours in a debugging black hole.
 
@@ -243,7 +284,31 @@ Claude's value isn't in writing code for me, but in **dramatically shortening th
 
 Of course, Claude isn't omnipotent. All testing was done by me, all architectural decisions were mine (like choosing two socket connections instead of one, choosing StubWorkload instead of full-system boot), and all final verification required confirmation in the real environment. AI is an amplifier, not a replacement.
 
-But this amplifier is genuinely powerful. One day, one person, one AI, and a $14,000 GPU was brought into QEMU.
+But this amplifier is genuinely powerful. Two days, one person, one AI, and a $14,000 GPU was brought into QEMU.
+
+---
+
+## References
+
+**Project & Source Code**
+
+- [cosim-gpu](https://github.com/zevorn/cosim-gpu) — This project repository (with gem5, QEMU, gem5-resources submodules)
+- [Complete Usage Guide](cosim-usage-guide.md) — Build, run, and test walkthrough
+- [Technical Notes](cosim-technical-notes.md) — Architecture, pitfalls, and fixes
+- [MI300X Memory Management](mi300x-memory-management.md) — GART, address translation, memory mapping
+- [Guest GPU Init](cosim-guest-gpu-init.md) — Driver loading and device initialization
+- [Debugging Pitfalls](cosim-debugging-pitfalls.md) — Common issues and solutions
+
+**Upstream Projects**
+
+- [gem5](https://www.gem5.org/) — Modular computer architecture simulator
+- [QEMU](https://www.qemu.org/) — Open-source machine emulator and virtualizer
+- [ROCm](https://rocm.docs.amd.com/) — AMD open-source GPU computing platform
+- [AMD Instinct MI300X](https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html) — Product specifications
+
+**Development Tools**
+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — Anthropic's CLI programming assistant
 
 ---
 
