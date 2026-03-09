@@ -156,6 +156,7 @@ step "Starting gem5 MI300X GPU model in Docker..."
 GEM5_DOCKER_CMD=(
     docker run -d --rm
     --name "$GEM5_CONTAINER"
+    --user "$(id -u):$(id -g)"
     -v "${GEM5_DIR}:/gem5"
     -v /tmp:/tmp
     -v /dev/shm:/dev/shm
@@ -216,21 +217,7 @@ while true; do
 done
 
 # ==================================================================
-# Step 3: Fix permissions (Docker creates files as root)
-# ==================================================================
-
-step "Fixing shared resource permissions..."
-
-docker exec "$GEM5_CONTAINER" chmod 777 "$SOCKET_PATH"
-docker exec "$GEM5_CONTAINER" chmod 666 "$SHMEM_FILE"
-# cosim-guest-ram is created by QEMU (memory-backend-file), not gem5.
-# Only fix permissions if it already exists; QEMU will create it if not.
-docker exec "$GEM5_CONTAINER" sh -c "test -f $SHMEM_HOST_FILE && chmod 666 $SHMEM_HOST_FILE" || true
-
-info "Permissions fixed"
-
-# ==================================================================
-# Step 4: Start QEMU
+# Step 3: Start QEMU
 # ==================================================================
 
 KCMDLINE="console=ttyS0,115200 root=/dev/vda1 drm_kms_helper.fbdev_emulation=0 modprobe.blacklist=amdgpu earlyprintk=serial,ttyS0,115200"
