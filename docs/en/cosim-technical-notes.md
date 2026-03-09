@@ -7,41 +7,41 @@ This document summarizes the architecture, implementation details, resolved issu
 ## 1. Architecture Overview
 
 ```
-┌──────────────────────────────────┐
-│  QEMU  (Q35 + KVM)              │
-│  ┌──────────────────────────┐   │
-│  │  Guest Linux (Ubuntu 24) │   │
-│  │  amdgpu driver (ROCm 7)  │   │
-│  │  ROCm userspace           │   │
-│  └──────────┬───────────────┘   │
-│             │ MMIO / Doorbell    │
-│  ┌──────────▼───────────────┐   │
-│  │  vfio-user-pci           │   │
-│  │  (QEMU built-in device)  │   │
-│  └──────────┬───────────────┘   │
-│             │ vfio-user protocol │
-└─────────────┼───────────────────┘
-              │  /tmp/gem5-mi300x.sock
-              │  (Unix socket)
-┌─────────────┼───────────────────┐
-│  gem5       │                   │
-│  ┌──────────▼───────────────┐   │
-│  │  MI300XVfioUser          │   │
-│  │  (mi300x_vfio_user.cc)   │   │
-│  │  [libvfio-user server]   │   │
-│  └──────────┬───────────────┘   │
-│             │ AMDGPUDevice API   │
-│  ┌──────────▼───────────────┐   │
-│  │  AMDGPUDevice            │   │
-│  │  PM4PacketProcessor      │   │
-│  │  SDMAEngine              │   │
-│  │  Shader / CU array       │   │
-│  └──────────────────────────┘   │
-└─────────────────────────────────┘
++--------------------------------------+
+|  QEMU  (Q35 + KVM)                  |
+|  +--------------------------------+  |
+|  |  Guest Linux (Ubuntu 24)       |  |
+|  |  amdgpu driver (ROCm 7)        |  |
+|  |  ROCm userspace                |  |
+|  +--------------+-----------------+  |
+|                 | MMIO / Doorbell     |
+|  +--------------v-----------------+  |
+|  |  vfio-user-pci                 |  |
+|  |  (QEMU built-in device)        |  |
+|  +--------------+-----------------+  |
+|                 | vfio-user protocol  |
++-----------------+--------------------+
+                  |  /tmp/gem5-mi300x.sock
+                  |  (Unix socket)
++-----------------+--------------------+
+|  gem5           |                    |
+|  +--------------v-----------------+  |
+|  |  MI300XVfioUser                |  |
+|  |  (mi300x_vfio_user.cc)         |  |
+|  |  [libvfio-user server]         |  |
+|  +--------------+-----------------+  |
+|                 | AMDGPUDevice API    |
+|  +--------------v-----------------+  |
+|  |  AMDGPUDevice                  |  |
+|  |  PM4PacketProcessor            |  |
+|  |  SDMAEngine                    |  |
+|  |  Shader / CU array             |  |
+|  +--------------------------------+  |
++--------------------------------------+
 
 Shared Memory:
-  /dev/shm/cosim-guest-ram   Guest physical RAM (QEMU ↔ gem5 DMA)
-  /dev/shm/mi300x-vram       GPU VRAM (QEMU BAR0 ↔ gem5 device memory)
+  /dev/shm/cosim-guest-ram   Guest physical RAM (QEMU <-> gem5 DMA)
+  /dev/shm/mi300x-vram       GPU VRAM (QEMU BAR0 <-> gem5 device memory)
 ```
 
 > **Note**: The legacy backend (`mi300x-gem5` QEMU device + `MI300XGem5Cosim` gem5 bridge) is still available via `--cosim-backend=legacy`. The vfio-user backend is the current default.

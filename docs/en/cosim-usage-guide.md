@@ -7,21 +7,21 @@ A complete workflow from compilation to running HIP GPU compute.
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────┐     ┌──────────────────────────────┐
-│  QEMU (Q35 + KVM)              │     │  gem5 (inside Docker)        │
-│  ┌───────────────────────────┐  │     │  ┌────────────────────────┐  │
-│  │ Guest Linux (Ubuntu 24.04)│  │     │  │ MI300X GPU Model       │  │
-│  │ amdgpu driver             │  │     │  │ - Shader + CU          │  │
-│  │ ROCm 7.0 / HIP runtime   │  │     │  │ - PM4 / SDMA Engines   │  │
-│  └───────────┬───────────────┘  │     │  │ - Ruby Cache Hierarchy │  │
-│              │ MMIO/Doorbell    │     │  └──────────┬─────────────┘  │
-│  ┌───────────▼───────────────┐  │     │  ┌──────────▼─────────────┐  │
-│  │ vfio-user-pci (built-in)  │◄─────►│  │ MI300XVfioUser Server  │  │
-│  └───────────────────────────┘  │vfio │  └────────────────────────┘  │
-│                                 │-user│                              │
-└─────────────────────────────────┘     └──────────────────────────────┘
-        │                                         │
-        ▼                                         ▼
++---------------------------------+     +------------------------------+
+|  QEMU (Q35 + KVM)              |     |  gem5 (inside Docker)        |
+|  +---------------------------+  |     |  +------------------------+  |
+|  | Guest Linux (Ubuntu 24.04)|  |     |  | MI300X GPU Model       |  |
+|  | amdgpu driver             |  |     |  | - Shader + CU          |  |
+|  | ROCm 7.0 / HIP runtime   |  |     |  | - PM4 / SDMA Engines   |  |
+|  +-----------+---------------+  |     |  | - Ruby Cache Hierarchy |  |
+|              | MMIO/Doorbell    |     |  +----------+-------------+  |
+|  +-----------v---------------+  |     |  +----------v-------------+  |
+|  | vfio-user-pci (built-in)  |<--------->| MI300XVfioUser Server  |  |
+|  +---------------------------+  |vfio-|  +------------------------+  |
+|                                 |user |                              |
++---------------------------------+     +------------------------------+
+        |                                         |
+        v                                         v
   /dev/shm/cosim-guest-ram              /dev/shm/mi300x-vram
   (Guest Physical Memory, Shared)       (GPU VRAM, Shared)
 ```

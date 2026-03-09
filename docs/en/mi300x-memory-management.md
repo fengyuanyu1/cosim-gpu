@@ -10,24 +10,24 @@ The MI300X (GFX 9.4.3) GPU uses multiple address spaces and apertures to access 
 
 ```
 GPU Virtual Address (48-bit)
-│
-├─ AGP aperture      [agpBot, agpTop]
-│  └─ Direct offset:  paddr = vaddr - agpBot + agpBase
-│
-├─ GART aperture     [ptStart<<12, ptEnd<<12]
-│  └─ Page table:     paddr = GART_PTE[page_num].phys_addr | offset
-│
-├─ Framebuffer (FB)  [fbBase, fbTop]
-│  └─ VRAM offset:    vram_off = vaddr - fbBase
-│
-├─ System aperture   [sysAddrL, sysAddrH]
-│  └─ Direct map:     paddr = vaddr  (system memory)
-│
-├─ MMHUB aperture    [mmhubBase, mmhubTop]
-│  └─ VRAM mirror:    vram_off = vaddr - mmhubBase
-│
-└─ User VM (VMID>0)  [arbitrary VAs]
-   └─ Multi-level page table walk (4 or 5 levels)
+|
++-- AGP aperture      [agpBot, agpTop]
+|  +-- Direct offset:  paddr = vaddr - agpBot + agpBase
+|
++-- GART aperture     [ptStart<<12, ptEnd<<12]
+|  +-- Page table:     paddr = GART_PTE[page_num].phys_addr | offset
+|
++-- Framebuffer (FB)  [fbBase, fbTop]
+|  +-- VRAM offset:    vram_off = vaddr - fbBase
+|
++-- System aperture   [sysAddrL, sysAddrH]
+|  +-- Direct map:     paddr = vaddr  (system memory)
+|
++-- MMHUB aperture    [mmhubBase, mmhubTop]
+|  +-- VRAM mirror:    vram_off = vaddr - mmhubBase
+|
++-- User VM (VMID>0)  [arbitrary VAs]
+   +-- Multi-level page table walk (4 or 5 levels)
 ```
 
 ### 1.1 Aperture Registers
@@ -69,16 +69,16 @@ GART is a single-level page table used by VMID 0 (kernel mode) to map GPU virtua
 
 ```
 VRAM offset = ptBase (gartBase)
-┌─────────────────┐  ptBase + 0
-│ PTE[0]  (8 bytes)│  maps page ptStart
-├─────────────────┤  ptBase + 8
-│ PTE[1]          │  maps page ptStart + 1
-├─────────────────┤  ptBase + 16
-│ PTE[2]          │  maps page ptStart + 2
-│ ...             │
-├─────────────────┤
-│ PTE[N]          │  maps page ptStart + N
-└─────────────────┘  ptBase + (ptEnd - ptStart + 1) * 8
++-------------------+  ptBase + 0
+| PTE[0]  (8 bytes) |  maps page ptStart
++-------------------+  ptBase + 8
+| PTE[1]            |  maps page ptStart + 1
++-------------------+  ptBase + 16
+| PTE[2]            |  maps page ptStart + 2
+| ...               |
++-------------------+
+| PTE[N]            |  maps page ptStart + N
++-------------------+  ptBase + (ptEnd - ptStart + 1) * 8
 ```
 
 Each PTE is 8 bytes with the following format:
@@ -115,21 +115,21 @@ This function multiplies the page number by 8 (the size of a PTE), effectively c
 
 ```
 Original GPU VA (e.g., 0x7FFF00032000)
-  │
-  ▼ getGARTAddr()
+  |
+  v getGARTAddr()
 Transformed addr = ((VA>>12) * 8) << 12 | low_bits
                  = 0x3FFF80019_0000  (example)
-  │
-  ▼ GARTTranslationGen::translate()
+  |
+  v GARTTranslationGen::translate()
 gart_addr = bits(transformed, 63, 12) = page_num * 8
-  │
-  ├─ Look up gartTable hash map (populated by writeFrame / SDMA shadow)
-  │
-  ├─ Cosim fallback: read PTE from shared VRAM
-  │   pte_offset = gart_addr - (ptStart * 8)
-  │   pte = *(vramShmemPtr + ptBase + pte_offset)
-  │
-  ▼ Extract physical address
+  |
+  +-- Look up gartTable hash map (populated by writeFrame / SDMA shadow)
+  |
+  +-- Cosim fallback: read PTE from shared VRAM
+  |   pte_offset = gart_addr - (ptStart * 8)
+  |   pte = *(vramShmemPtr + ptBase + pte_offset)
+  |
+  v Extract physical address
 paddr = (bits(PTE, 47, 12) << 12) | bits(VA, 11, 0)
 ```
 
@@ -158,9 +158,9 @@ SDMA uses this aperture to access device memory in VMID 0 mode.
 User-space GPU programs (such as HIP applications) use multi-level page tables similar to x86-64 paging. Each VMID (1-15) has its own page table base register.
 
 ```
-VM_CONTEXT[N]_PAGE_TABLE_BASE_ADDR  → Page Directory Base
-  │
-  ▼ 4-level walk (PDE3 → PDE2 → PDE1 → PDE0 → PTE)
+VM_CONTEXT[N]_PAGE_TABLE_BASE_ADDR  -> Page Directory Base
+  |
+  v 4-level walk (PDE3 -> PDE2 -> PDE1 -> PDE0 -> PTE)
 Physical address
 ```
 
@@ -172,10 +172,10 @@ The `UserTranslationGen` class performs this walk using the GPU's page table wal
 
 ```
 PM4PacketProcessor::translate(vaddr, size)
-  │
-  ├─ inAGP(vaddr)?  → AGPTranslationGen  (direct offset)
-  │
-  └─ else           → GARTTranslationGen  (page table lookup)
+  |
+  +-- inAGP(vaddr)?  -> AGPTranslationGen  (direct offset)
+  |
+  +-- else           -> GARTTranslationGen  (page table lookup)
 ```
 
 All PM4 DMA uses GART translation (VMID 0). Addresses are transformed via `getGARTAddr()` before the DMA call.
@@ -184,14 +184,14 @@ All PM4 DMA uses GART translation (VMID 0). Addresses are transformed via `getGA
 
 ```
 SDMAEngine::translate(vaddr, size)
-  │
-  ├─ cur_vmid > 0?  → UserTranslationGen  (multi-level page table)
-  │
-  ├─ inAGP(vaddr)?  → AGPTranslationGen
-  │
-  ├─ inMMHUB(vaddr)?→ MMHUBTranslationGen (VRAM shadow)
-  │
-  └─ else           → GARTTranslationGen
+  |
+  +-- cur_vmid > 0?  -> UserTranslationGen  (multi-level page table)
+  |
+  +-- inAGP(vaddr)?  -> AGPTranslationGen
+  |
+  +-- inMMHUB(vaddr)?-> MMHUBTranslationGen (VRAM shadow)
+  |
+  +-- else           -> GARTTranslationGen
 ```
 
 SDMA has more aperture awareness than PM4, as it handles both kernel-mode (VMID 0) and user-mode (VMID > 0) operations.
@@ -229,42 +229,42 @@ In co-simulation mode, DMA writes land in shared guest RAM (`/dev/shm/cosim-gues
 ## 7. Co-simulation Memory Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                 Host (Linux)                        │
-│                                                     │
-│  /dev/shm/cosim-guest-ram  (8 GiB)                 │
-│  ┌────────────────────────────────────────────┐     │
-│  │  Guest Physical RAM                        │     │
-│  │  ← QEMU memory-backend-file (share=on)    │     │
-│  │  ← gem5 system.shared_backstore            │     │
-│  │                                             │     │
-│  │  Contains: page tables, ring buffers,       │     │
-│  │  IH ring, fence values, kernel code/data    │     │
-│  └────────────────────────────────────────────┘     │
-│                                                     │
-│  /dev/shm/mi300x-vram  (16 GiB)                    │
-│  ┌────────────────────────────────────────────┐     │
-│  │  GPU VRAM                                   │     │
-│  │  ← QEMU BAR0 mmap (driver writes here)     │     │
-│  │  ← gem5 vramShmemPtr (GPU model reads)      │     │
-│  │                                             │     │
-│  │  Contains: GART page table, GPU page tables,│     │
-│  │  frame data, device-local allocations       │     │
-│  │                                             │     │
-│  │  Layout:                                    │     │
-│  │  [0, ~15.7G)     General VRAM allocations   │     │
-│  │  [0x3EE600000]   GART page table (ptBase)   │     │
-│  │  [~15.7G, 16G)   Reserved / metadata        │     │
-│  └────────────────────────────────────────────┘     │
-│                                                     │
-│  /tmp/gem5-mi300x.sock  (Unix domain socket)        │
-│  ┌────────────────────────────────────────────┐     │
-│  │  MMIO connection:  QEMU ←→ gem5 (sync)     │     │
-│  │  Event connection: gem5  → QEMU (async)     │     │
-│  │    - IRQ raise/lower                        │     │
-│  │    - DMA read/write requests                │     │
-│  └────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────┘
++-----------------------------------------------------+
+|                 Host (Linux)                        |
+|                                                     |
+|  /dev/shm/cosim-guest-ram  (8 GiB)                 |
+|  +--------------------------------------------+     |
+|  |  Guest Physical RAM                        |     |
+|  |  <- QEMU memory-backend-file (share=on)    |     |
+|  |  <- gem5 system.shared_backstore            |     |
+|  |                                             |     |
+|  |  Contains: page tables, ring buffers,       |     |
+|  |  IH ring, fence values, kernel code/data    |     |
+|  +--------------------------------------------+     |
+|                                                     |
+|  /dev/shm/mi300x-vram  (16 GiB)                    |
+|  +--------------------------------------------+     |
+|  |  GPU VRAM                                   |     |
+|  |  <- QEMU BAR0 mmap (driver writes here)     |     |
+|  |  <- gem5 vramShmemPtr (GPU model reads)      |     |
+|  |                                             |     |
+|  |  Contains: GART page table, GPU page tables,|     |
+|  |  frame data, device-local allocations       |     |
+|  |                                             |     |
+|  |  Layout:                                    |     |
+|  |  [0, ~15.7G)     General VRAM allocations   |     |
+|  |  [0x3EE600000]   GART page table (ptBase)   |     |
+|  |  [~15.7G, 16G)   Reserved / metadata        |     |
+|  +--------------------------------------------+     |
+|                                                     |
+|  /tmp/gem5-mi300x.sock  (Unix domain socket)        |
+|  +--------------------------------------------+     |
+|  |  MMIO connection:  QEMU <-> gem5 (sync)     |     |
+|  |  Event connection: gem5  -> QEMU (async)     |     |
+|  |    - IRQ raise/lower                        |     |
+|  |    - DMA read/write requests                |     |
+|  +--------------------------------------------+     |
++-----------------------------------------------------+
 ```
 
 ### 7.1 Memory Split (Q35)
@@ -294,11 +294,11 @@ If a PTE is 0 (unmapped page), co-simulation mode maps to a sink (`paddr=0`) ins
 ```
 1. PM4 RELEASE_MEM packet: addr=0x113100000 (guest phys), data=0x1234
 2. isVRAMAddress(0x113100000)? No (< 16 GiB but not a VRAM offset)
-3. getGARTAddr(0x113100000) → 0x899800000000 (page * 8 transform)
+3. getGARTAddr(0x113100000) -> 0x899800000000 (page * 8 transform)
 4. dmaWriteVirt(0x899800000000, 8, cb, &data)
 5. GARTTranslationGen::translate()
    - gart_addr = 0x89980000
-   - Look up PTE from shared VRAM → PTE has paddr bits
+   - Look up PTE from shared VRAM -> PTE has paddr bits
    - paddr = extracted address (in guest RAM)
 6. DMA write lands in /dev/shm/cosim-guest-ram at paddr offset
 7. Guest driver reads fence value from same shared memory
@@ -308,14 +308,14 @@ If a PTE is 0 (unmapped page), co-simulation mode maps to a sink (`paddr=0`) ins
 
 ```
 1. User writes AQL packet to queue ring buffer (user VA)
-2. User writes doorbell → QEMU → gem5 (socket MMIO)
-3. gem5 PM4 reads queue MQD (GART address → guest RAM)
+2. User writes doorbell -> QEMU -> gem5 (socket MMIO)
+3. gem5 PM4 reads queue MQD (GART address -> guest RAM)
 4. gem5 GPU command processor dispatches kernel to CU array
 5. CUs execute wavefronts (compute work)
 6. On completion: RELEASE_MEM writes fence + triggers interrupt
 7. IH writes cookie to IH ring (raw DMA to guest RAM)
-8. intrPost() → sendIrqRaise(0) → QEMU event socket
-9. QEMU msix_notify() → guest IH handler processes interrupt
+8. intrPost() -> sendIrqRaise(0) -> QEMU event socket
+9. QEMU msix_notify() -> guest IH handler processes interrupt
 10. hipDeviceSynchronize() returns success
 ```
 
