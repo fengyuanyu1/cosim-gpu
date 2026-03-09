@@ -41,7 +41,8 @@ __global__ void add_block_offset(int* data, const int* offsets, int N) {
 }
 
 int main() {
-    const int N = 1 << 12;  // 4K elements (keep small for cosim)
+    // Single block: gem5 cosim lacks inter-kernel global memory coherence
+    const int N = BLOCK_SIZE;
     const size_t bytes = N * sizeof(int);
     int failures = 0;
     Timer timer;
