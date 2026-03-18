@@ -124,7 +124,9 @@ cleanup_session() {
     fi
     docker rm -f gem5-cosim >/dev/null 2>&1 || true
     rm -rf "$SESSION_DIR" >/dev/null 2>&1 || true
+    # Clean up single-GPU and multi-GPU socket/shmem paths
     rm -f /tmp/gem5-mi300x.sock /dev/shm/mi300x-vram /dev/shm/cosim-guest-ram 2>/dev/null || true
+    rm -f /tmp/gem5-mi300x-[0-9]*.sock /dev/shm/mi300x-vram-[0-9]* 2>/dev/null || true
 }
 
 session_alive() {
