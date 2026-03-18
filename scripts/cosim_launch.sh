@@ -50,6 +50,7 @@ GEM5_TIMEOUT=120
 QEMU_TRACE=""
 SHARE_DIR=""
 COSIM_BACKEND="vfio-user"
+NUM_GPUS="1"
 
 # ---- Colors ----
 
@@ -87,6 +88,7 @@ Options:
   --qemu-trace EVENTS     QEMU trace events (e.g. mi300x_gem5_*)
   --share-dir PATH        Share host dir with guest via 9p (mount tag: cosim_share)
   --cosim-backend MODE    vfio-user (default) or legacy
+  --num-gpus N            Number of GPU instances (default: 1)
   --timeout SECS          gem5 init timeout (default: 120)
   -h, --help              Show this help
 EOF
@@ -109,16 +111,47 @@ while [[ $# -gt 0 ]]; do
         --qemu-trace)    QEMU_TRACE="$2";       shift 2 ;;
         --share-dir)     SHARE_DIR="$2";        shift 2 ;;
         --cosim-backend) COSIM_BACKEND="$2";   shift 2 ;;
+        --num-gpus)      NUM_GPUS="$2";         shift 2 ;;
         --timeout)       GEM5_TIMEOUT="$2";     shift 2 ;;
         -h|--help)       usage ;;
         *)               echo "Unknown option: $1"; usage ;;
     esac
 done
 
+# ---- Multi-GPU validation ----
+
+if [[ "$NUM_GPUS" -lt 1 ]]; then
+    error "--num-gpus must be >= 1"
+fi
+if [[ "$NUM_GPUS" -gt 1 && "$COSIM_BACKEND" != "vfio-user" ]]; then
+    error "Multi-GPU only supports vfio-user backend"
+fi
+
 # ---- Derived paths ----
 
-SHMEM_FILE="/dev/shm${SHMEM_PATH}"
 SHMEM_HOST_FILE="/dev/shm${SHMEM_HOST_PATH}"
+
+# Per-GPU socket and VRAM shmem paths
+# Single GPU: /tmp/gem5-mi300x.sock, /dev/shm/mi300x-vram
+# Multi GPU:  /tmp/gem5-mi300x-{0..N}.sock, /dev/shm/mi300x-vram-{0..N}
+gpu_socket_path() {
+    local gpu_id=$1
+    if [[ "$NUM_GPUS" -eq 1 ]]; then
+        echo "$SOCKET_PATH"
+    else
+        local stem="${SOCKET_PATH%.sock}"
+        echo "${stem}-${gpu_id}.sock"
+    fi
+}
+
+gpu_shmem_file() {
+    local gpu_id=$1
+    if [[ "$NUM_GPUS" -eq 1 ]]; then
+        echo "/dev/shm${SHMEM_PATH}"
+    else
+        echo "/dev/shm${SHMEM_PATH}-${gpu_id}"
+    fi
+}
 
 # Container paths (gem5 source mounted at /gem5)
 C_GEM5_BIN="/gem5/build/VEGA_X86/gem5.opt"
@@ -143,9 +176,11 @@ cleanup() {
     echo ""
     info "Shutting down co-simulation..."
     docker rm -f "$GEM5_CONTAINER" >/dev/null 2>&1 || true
-    rm -f "$SHMEM_FILE" "$SHMEM_HOST_FILE" 2>/dev/null || true
-    # socket is owned by root (Docker), may fail — that's fine
-    rm -f "$SOCKET_PATH" 2>/dev/null || true
+    rm -f "$SHMEM_HOST_FILE" 2>/dev/null || true
+    for ((g=0; g<NUM_GPUS; g++)); do
+        rm -f "$(gpu_shmem_file "$g")" 2>/dev/null || true
+        rm -f "$(gpu_socket_path "$g")" 2>/dev/null || true
+    done
     info "Done."
 }
 trap cleanup EXIT INT TERM
@@ -153,8 +188,11 @@ trap cleanup EXIT INT TERM
 # ---- Clean up stale state ----
 
 docker rm -f "$GEM5_CONTAINER" >/dev/null 2>&1 || true
-rm -f "$SHMEM_FILE" "$SHMEM_HOST_FILE" 2>/dev/null || true
-rm -f "$SOCKET_PATH" 2>/dev/null || true
+rm -f "$SHMEM_HOST_FILE" 2>/dev/null || true
+for ((g=0; g<NUM_GPUS; g++)); do
+    rm -f "$(gpu_shmem_file "$g")" 2>/dev/null || true
+    rm -f "$(gpu_socket_path "$g")" 2>/dev/null || true
+done
 
 # ==================================================================
 # Step 1: Start gem5 in Docker
@@ -189,6 +227,7 @@ GEM5_DOCKER_CMD+=(
     "--num-compute-units=$NUM_CUS"
     "--mem-size=$HOST_MEM"
     "--cosim-backend=$COSIM_BACKEND"
+    "--num-gpus=$NUM_GPUS"
 )
 
 "${GEM5_DOCKER_CMD[@]}" >/dev/null
@@ -208,9 +247,13 @@ else
     READY_PATTERN="MI300XGem5Cosim: listening"
 fi
 
+# For multi-GPU, wait until all N bridges report "listening"
+EXPECTED_READY_COUNT="$NUM_GPUS"
+
 while true; do
-    if docker logs "$GEM5_CONTAINER" 2>&1 | grep -q "$READY_PATTERN"; then
-        info "gem5 cosim socket ready (${ELAPSED}s, backend=$COSIM_BACKEND)"
+    READY_COUNT=$(docker logs "$GEM5_CONTAINER" 2>&1 | grep -c "$READY_PATTERN" || true)
+    if [[ "$READY_COUNT" -ge "$EXPECTED_READY_COUNT" ]]; then
+        info "gem5 cosim ready: $READY_COUNT/$EXPECTED_READY_COUNT GPU(s) (${ELAPSED}s, backend=$COSIM_BACKEND)"
         break
     fi
 
@@ -244,12 +287,16 @@ step "Starting QEMU (Q35 + KVM, backend=$COSIM_BACKEND)..."
 echo "============================================================"
 echo "  Machine:    Q35 + KVM"
 echo "  Backend:    $COSIM_BACKEND"
+echo "  Num GPUs:   $NUM_GPUS"
 echo "  CPUs:       $HOST_CPUS"
 echo "  Memory:     $HOST_MEM"
 echo "  Disk:       $(basename "$DISK_IMAGE")"
 echo "  Kernel:     $(basename "$KERNEL")"
-echo "  GPU socket: $SOCKET_PATH"
-echo "  VRAM SHM:   $SHMEM_FILE"
+for ((g=0; g<NUM_GPUS; g++)); do
+    echo "  GPU $g:"
+    echo "    Socket:   $(gpu_socket_path "$g")"
+    echo "    VRAM SHM: $(gpu_shmem_file "$g")"
+done
 echo "============================================================"
 echo ""
 echo "GPU driver loads automatically via cosim-gpu-setup.service (~40s)."
@@ -286,12 +333,15 @@ QEMU_CMD=(
 )
 
 if [[ "$COSIM_BACKEND" == "vfio-user" ]]; then
-    # Standard vfio-user protocol: QEMU's built-in vfio-user-pci device
-    # Socket param requires JSON object format for SocketAddress type
-    QEMU_CMD+=(-device "{\"driver\":\"vfio-user-pci\",\"socket\":{\"type\":\"unix\",\"path\":\"$SOCKET_PATH\"}}")
+    # Standard vfio-user protocol: one vfio-user-pci device per GPU
+    for ((g=0; g<NUM_GPUS; g++)); do
+        local_sock="$(gpu_socket_path "$g")"
+        QEMU_CMD+=(-device "{\"driver\":\"vfio-user-pci\",\"socket\":{\"type\":\"unix\",\"path\":\"$local_sock\"}}")
+    done
 else
-    # Legacy custom protocol: QEMU's mi300x-gem5 device
-    QEMU_CMD+=(-device "mi300x-gem5,gem5-socket=$SOCKET_PATH,shmem-path=$SHMEM_FILE,vram-size=$VRAM_BYTES,romfile=$GPU_ROM")
+    # Legacy custom protocol: single GPU only
+    local_shmem="$(gpu_shmem_file 0)"
+    QEMU_CMD+=(-device "mi300x-gem5,gem5-socket=$SOCKET_PATH,shmem-path=$local_shmem,vram-size=$VRAM_BYTES,romfile=$GPU_ROM")
 fi
 
 QEMU_CMD+=(
