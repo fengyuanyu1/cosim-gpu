@@ -34,7 +34,7 @@ class NICModel:
     Bridges between intra-node xGMI and inter-node Ethernet.
     """
 
-    def __init__(self, node_id, bandwidth="100GBps", latency="1us"):
+    def __init__(self, node_id, bandwidth="100GB/s", latency="1us"):
         self.node_id = node_id
         self.bandwidth = bandwidth
         self.latency = latency
@@ -48,7 +48,7 @@ class NICModel:
 
 
 def build_fat_tree(num_nodes, gpus_per_node=8,
-                   inter_node_bw="100GBps", inter_node_lat="1us"):
+                   inter_node_bw="100GB/s", inter_node_lat="1us"):
     """Build fat-tree topology configuration for SST Merlin.
 
     Fat-tree with k-ary structure:
@@ -72,14 +72,14 @@ def build_fat_tree(num_nodes, gpus_per_node=8,
         },
         "intra_node": {
             "type": "xgmi_mesh",
-            "bandwidth": "128GBps",
+            "bandwidth": "128GB/s",
             "latency": "100ns",
         },
     }
 
 
 def build_dragonfly(num_nodes, gpus_per_node=8,
-                    inter_node_bw="100GBps", inter_node_lat="1us"):
+                    inter_node_bw="100GB/s", inter_node_lat="1us"):
     """Build dragonfly topology configuration for SST Merlin.
 
     Dragonfly with group-based structure:
@@ -103,7 +103,7 @@ def build_dragonfly(num_nodes, gpus_per_node=8,
         },
         "intra_node": {
             "type": "xgmi_mesh",
-            "bandwidth": "128GBps",
+            "bandwidth": "128GB/s",
             "latency": "100ns",
         },
     }

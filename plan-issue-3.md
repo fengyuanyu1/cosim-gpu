@@ -82,7 +82,7 @@ Following TDD philosophy, each criterion includes positive and negative tests fo
 
 - AC-8: xGMI link parameters are configurable at launch time
   - Positive Tests (expected to PASS):
-    - `--xgmi-bandwidth 128GBps --xgmi-latency 100ns` configures the link model accordingly
+    - `--xgmi-bandwidth 128GB/s --xgmi-latency 100ns` configures the link model accordingly
     - `--xgmi-topology mesh` creates full-mesh connectivity between GPU instances
     - `--xgmi-topology ring` creates ring connectivity
     - Default parameters match MI300X hardware specs (128 GB/s, 16 lanes)
@@ -357,4 +357,3 @@ Key dependency changes from original draft:
 - PCI topology: QEMU Q35 chipset has limited root port count. For 8 GPUs, PCIe switches or additional root ports may be needed. Investigate Q35 capacity early in Milestone 1
 - amdgpu driver multi-GPU: the cosim environment uses `ip_block_mask=0x67` which disables PSP and SMU. Verify that xGMI topology discovery works without these blocks, or implement a minimal xGMI discovery stub
 - Guest RAM shared memory (`/dev/shm/cosim-guest-ram`) is shared across all GPUs; only VRAM is per-GPU
-

@@ -38,7 +38,7 @@ SST_CONFIG = {
         "type": "merlin.hr_router",
         "topology": "merlin.singlerouter",
         "num_ports": 2,
-        "link_bw": "128GBps",
+        "link_bw": "128GB/s",
         "link_lat": "100ns",
         "flit_size": "64B",
         "input_buf_size": "4KiB",
