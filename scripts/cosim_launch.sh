@@ -330,6 +330,8 @@ QEMU_CMD=(
     -kernel "$KERNEL"
     -append "$KCMDLINE"
     -drive "file=$DISK_IMAGE,format=raw,if=virtio"
+    -netdev "user,id=net0,hostfwd=tcp::2222-:22"
+    -device "virtio-net-pci,netdev=net0"
 )
 
 if [[ "$COSIM_BACKEND" == "vfio-user" ]]; then
