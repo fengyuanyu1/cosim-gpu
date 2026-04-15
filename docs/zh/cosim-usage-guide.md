@@ -271,6 +271,50 @@ screen -r qemu-cosim
 # 退出 screen: Ctrl-A D（分离）
 ```
 
+#### 4.5 SSH 访问 Guest
+
+`cosim_launch.sh` 脚本默认启用了用户态网络和 SSH 端口转发（`-netdev user,id=net0,hostfwd=tcp::2222-:22` + `virtio-net-pci`）。要通过 SSH 访问 Guest，需要先在 Guest 内配置网络。
+
+**1. 查看网卡名称：**
+
+```bash
+ip a
+```
+
+找到 virtio 网卡接口（如 `enp0s2`），具体名称取决于 PCI 拓扑，可能不同。
+
+**2. 配置 netplan：**
+
+编辑 `/etc/netplan/50-cloud-init.yaml`：
+
+```yaml
+network:
+  version: 2
+  ethernets:
+    enp0s2:
+      dhcp4: true
+```
+
+> **注意：** 将 `enp0s2` 替换为 `ip a` 输出中的实际接口名称。
+
+**3. 应用配置：**
+
+```bash
+netplan apply
+```
+
+**4. 从宿主机 SSH 登录：**
+
+在宿主机上打开另一个终端，执行：
+
+```bash
+ssh -p 2222 gem5@localhost
+```
+
+默认密码：`12345`。
+
+> **提示：** 相比 QEMU 串口控制台，SSH 访问在交互操作、文件传输（`scp -P 2222`）以及多会话场景下更加方便。
+
 ---
 
 ## 第五步：加载 GPU 驱动

@@ -271,6 +271,50 @@ screen -r qemu-cosim
 # Detach from screen: Ctrl-A D
 ```
 
+#### 4.5 SSH Access to Guest
+
+The `cosim_launch.sh` script enables user networking and SSH port forwarding by default (`-netdev user,id=net0,hostfwd=tcp::2222-:22` + `virtio-net-pci`). To use SSH access to the guest, configure networking inside the guest first.
+
+**1. Identify the network interface name:**
+
+```bash
+ip a
+```
+
+Look for the virtio NIC interface (e.g., `enp0s2`). The exact name may vary depending on the PCI topology.
+
+**2. Configure netplan:**
+
+Edit `/etc/netplan/50-cloud-init.yaml`:
+
+```yaml
+network:
+  version: 2
+  ethernets:
+    enp0s2:
+      dhcp4: true
+```
+
+> **Note:** Replace `enp0s2` with the actual interface name from the `ip a` output.
+
+**3. Apply the configuration:**
+
+```bash
+netplan apply
+```
+
+**4. SSH from the host:**
+
+Open another terminal on the host and connect:
+
+```bash
+ssh -p 2222 gem5@localhost
+```
+
+Default password: `12345`.
+
+> **Tip:** SSH access is much more convenient than the QEMU serial console for interactive use, file transfers (`scp -P 2222`), and running multiple sessions.
+
 ---
 
 ## Step 5: Load the GPU Driver
