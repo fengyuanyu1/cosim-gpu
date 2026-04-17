@@ -7,14 +7,15 @@
 ./scripts/run_mi300x_fs.sh build-all
 cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 
-# Option B: manual
+# Option B: manual (build Docker image first — json-c needed by ext/libvfio-user)
+cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 cd gem5 && docker run --rm -v "$(pwd):/gem5" -w /gem5 \
     -e PYTHONPATH=/usr/lib/python3.12/lib-dynload \
-    ghcr.io/gem5/gpu-fs:latest \
+    gem5-run:local \
     bash -c "scons build/VEGA_X86/gem5.opt -j4 GOLD_LINKER=True --linker=gold"
 cd ../qemu && mkdir -p build && cd build && ../configure --target-list=x86_64-softmmu && make -j$(nproc)
-cd ../../scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
-docker run --rm -v "$(pwd)/gem5:/gem5" -w /gem5 ghcr.io/gem5/gpu-fs:latest \
+cd ../..
+docker run --rm -v "$(pwd)/gem5:/gem5" -w /gem5 gem5-run:local \
     bash -c "cd util/m5 && scons build/x86/out/m5"
 cp gem5/util/m5/build/x86/out/m5 gem5-resources/src/x86-ubuntu-gpu-ml/files/
 ./scripts/run_mi300x_fs.sh build-disk

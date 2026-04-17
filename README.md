@@ -52,7 +52,8 @@ git clone --recurse-submodules git@github.com:zevorn/cosim.git
 cd cosim
 
 # Build gem5 + QEMU + disk image (~2h total, needs KVM + Docker + ~60GB disk)
-GEM5_BUILD_IMAGE=ghcr.io/gem5/gpu-fs:latest ./scripts/run_mi300x_fs.sh build-all
+# This auto-builds the Docker image with json-c (needed by ext/libvfio-user)
+./scripts/run_mi300x_fs.sh build-all
 
 # Build runtime Docker image (for running gem5 inside Docker)
 cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
@@ -68,16 +69,16 @@ cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 git clone --recurse-submodules git@github.com:zevorn/cosim.git
 cd cosim
 
-# 2. Build gem5 (in Docker, ~30min; use -j1 if OOM-killed during linking)
+# 2. Build Docker image (adds json-c needed by ext/libvfio-user)
+cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
+
+# 3. Build gem5 (in Docker, ~30min; use -j1 if OOM-killed during linking)
 cd gem5
 docker run --rm -v "$(pwd):/gem5" -w /gem5 \
     -e PYTHONPATH=/usr/lib/python3.12/lib-dynload \
-    ghcr.io/gem5/gpu-fs:latest \
+    gem5-run:local \
     bash -c "scons build/VEGA_X86/gem5.opt -j4 GOLD_LINKER=True --linker=gold"
 cd ..
-
-# 3. Build runtime Docker image (for running gem5 inside Docker)
-cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 
 # 4. Build QEMU (stock build; vfio-user-pci is built-in since QEMU 10.0)
 cd qemu && mkdir -p build && cd build
@@ -87,7 +88,7 @@ cd ../..
 
 # 5. Pre-build m5 utility (recommended — avoids git clone inside guest VM)
 docker run --rm -v "$(pwd)/gem5:/gem5" -w /gem5 \
-    ghcr.io/gem5/gpu-fs:latest \
+    gem5-run:local \
     bash -c "cd util/m5 && scons build/x86/out/m5"
 cp gem5/util/m5/build/x86/out/m5 gem5-resources/src/x86-ubuntu-gpu-ml/files/
 

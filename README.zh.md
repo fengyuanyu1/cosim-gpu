@@ -51,7 +51,8 @@ git clone --recurse-submodules git@github.com:zevorn/cosim.git
 cd cosim
 
 # 构建 gem5 + QEMU + 磁盘镜像（总计约 2 小时，需要 KVM + Docker + 约 60GB 磁盘空间）
-GEM5_BUILD_IMAGE=ghcr.io/gem5/gpu-fs:latest ./scripts/run_mi300x_fs.sh build-all
+# 会自动构建包含 json-c 的 Docker 镜像（ext/libvfio-user 编译依赖）
+./scripts/run_mi300x_fs.sh build-all
 
 # 构建运行时 Docker 镜像（用于在 Docker 内运行 gem5）
 cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
@@ -67,16 +68,16 @@ cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 git clone --recurse-submodules git@github.com:zevorn/cosim.git
 cd cosim
 
-# 2. 编译 gem5（Docker 内，约 30 分钟；链接阶段 OOM 可改用 -j1）
+# 2. 构建 Docker 镜像（添加 ext/libvfio-user 编译所需的 json-c）
+cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
+
+# 3. 编译 gem5（Docker 内，约 30 分钟；链接阶段 OOM 可改用 -j1）
 cd gem5
 docker run --rm -v "$(pwd):/gem5" -w /gem5 \
     -e PYTHONPATH=/usr/lib/python3.12/lib-dynload \
-    ghcr.io/gem5/gpu-fs:latest \
+    gem5-run:local \
     bash -c "scons build/VEGA_X86/gem5.opt -j4 GOLD_LINKER=True --linker=gold"
 cd ..
-
-# 3. 构建运行时 Docker 镜像（用于在 Docker 内运行 gem5）
-cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 
 # 4. 编译 QEMU（标准构建；vfio-user-pci 自 QEMU 10.0 起内置）
 cd qemu && mkdir -p build && cd build
@@ -86,7 +87,7 @@ cd ../..
 
 # 5. 预编译 m5 工具（推荐 - 避免构建磁盘镜像时在 Guest 内 git clone）
 docker run --rm -v "$(pwd)/gem5:/gem5" -w /gem5 \
-    ghcr.io/gem5/gpu-fs:latest \
+    gem5-run:local \
     bash -c "cd util/m5 && scons build/x86/out/m5"
 cp gem5/util/m5/build/x86/out/m5 gem5-resources/src/x86-ubuntu-gpu-ml/files/
 
