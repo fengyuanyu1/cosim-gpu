@@ -41,6 +41,10 @@ QEMU_DIR="${COSIM_DIR}/qemu"
 QEMU_BUILD_DIR="${QEMU_DIR}/build"
 QEMU_BIN="${QEMU_BUILD_DIR}/qemu-system-x86_64"
 
+# Logs
+LOGS_DIR="${COSIM_DIR}/logs"
+BUILD_DISK_LOG="${LOGS_DIR}/build-disk.log"
+
 # Docker images
 GEM5_BUILD_IMAGE="gem5-build:local"
 GPU_APP_BUILD_IMAGE="${GPU_APP_BUILD_IMAGE:-ghcr.io/gem5/gpu-fs}"
@@ -196,12 +200,16 @@ build_disk_image() {
     fi
 
     info "Using QEMU: $QEMU_BIN"
+    info "Build log:  $BUILD_DISK_LOG"
+
+    mkdir -p "$LOGS_DIR"
     cd "${RESOURCES_DIR}/src/x86-ubuntu-gpu-ml"
     local proxy_args=()
     if [ -n "${https_proxy:-}" ]; then
         proxy_args+=(-var "http_proxy=${https_proxy}")
     fi
-    PATH="${QEMU_BUILD_DIR}:$PATH" ./build.sh -var "qemu_path=${QEMU_BIN}" "${proxy_args[@]}"
+    PATH="${QEMU_BUILD_DIR}:$PATH" ./build.sh -var "qemu_path=${QEMU_BIN}" "${proxy_args[@]}" \
+        2>&1 | awk '{ print strftime("[%H:%M:%S]"), $0; fflush() }' | tee "$BUILD_DISK_LOG"
 
     [ -f "$DISK_IMAGE" ] || error "Disk image build failed"
     info "Disk image: $DISK_IMAGE"
