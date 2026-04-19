@@ -41,6 +41,10 @@ QEMU_DIR="${COSIM_DIR}/qemu"
 QEMU_BUILD_DIR="${QEMU_DIR}/build"
 QEMU_BIN="${QEMU_BUILD_DIR}/qemu-system-x86_64"
 
+# Logs
+LOGS_DIR="${COSIM_DIR}/logs"
+BUILD_DISK_LOG="${LOGS_DIR}/build-disk.log"
+
 # Docker images
 GEM5_BUILD_IMAGE="gem5-build:local"
 GPU_APP_BUILD_IMAGE="${GPU_APP_BUILD_IMAGE:-ghcr.io/gem5/gpu-fs}"
@@ -182,8 +186,8 @@ build_disk_image() {
     info "Building disk image (Ubuntu 22.04 + ROCm)..."
     info "This takes ~30 min and needs ~60GB disk space"
 
-    command -v qemu-system-x86_64 >/dev/null || \
-        error "qemu-system-x86_64 not found. Install: sudo apt install qemu-system-x86"
+    [ -x "$QEMU_BIN" ] || \
+        error "Project QEMU not built: $QEMU_BIN. Run: $0 build-qemu"
     command -v unzip >/dev/null || \
         error "unzip not found. Install: sudo apt install unzip"
     check_kvm || error "KVM required for disk image build"
@@ -195,14 +199,17 @@ build_disk_image() {
         [[ ! $REPLY =~ ^[Yy]$ ]] && return 0
     fi
 
+    info "Using QEMU: $QEMU_BIN"
+    info "Build log:  $BUILD_DISK_LOG"
+
+    mkdir -p "$LOGS_DIR"
     cd "${RESOURCES_DIR}/src/x86-ubuntu-gpu-ml"
-    local qemu_bin
-    qemu_bin="$(command -v qemu-system-x86_64)"
     local proxy_args=()
     if [ -n "${https_proxy:-}" ]; then
         proxy_args+=(-var "http_proxy=${https_proxy}")
     fi
-    ./build.sh -var "qemu_path=${qemu_bin}" "${proxy_args[@]}"
+    PATH="${QEMU_BUILD_DIR}:$PATH" ./build.sh -var "qemu_path=${QEMU_BIN}" "${proxy_args[@]}" \
+        2>&1 | awk '{ print strftime("[%H:%M:%S]"), $0; fflush() }' | tee "$BUILD_DISK_LOG"
 
     [ -f "$DISK_IMAGE" ] || error "Disk image build failed"
     info "Disk image: $DISK_IMAGE"

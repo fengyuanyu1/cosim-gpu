@@ -78,9 +78,8 @@ cd /home/zevorn/cosim/gem5
 # Build using the gpu-fs image (amd64, includes all dependencies)
 docker run --rm \
     -v "$(pwd):/gem5" -w /gem5 \
-    -e PYTHONPATH=/usr/lib/python3.12/lib-dynload \
-    ghcr.io/gem5/gpu-fs:latest \
-    bash -c "scons build/VEGA_X86/gem5.opt -j4 GOLD_LINKER=True --linker=gold 2>&1"
+    gem5-run:local \
+    scons build/VEGA_X86/gem5.opt -j4
 ```
 
 > **Note:** Reduce parallelism (`-j1` or `-j2`) if running out of memory. Using the gold linker reduces memory usage during the linking stage.
