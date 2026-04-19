@@ -10,9 +10,8 @@ cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 # Option B: manual (build Docker image first — json-c needed by ext/libvfio-user)
 cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 cd gem5 && docker run --rm -v "$(pwd):/gem5" -w /gem5 \
-    -e PYTHONPATH=/usr/lib/python3.12/lib-dynload \
     gem5-run:local \
-    bash -c "scons build/VEGA_X86/gem5.opt -j4 GOLD_LINKER=True --linker=gold"
+    scons build/VEGA_X86/gem5.opt -j4
 cd ../qemu && mkdir -p build && cd build && ../configure --target-list=x86_64-softmmu && make -j$(nproc)
 cd ../..
 docker run --rm -v "$(pwd)/gem5:/gem5" -w /gem5 gem5-run:local \

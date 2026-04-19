@@ -75,9 +75,8 @@ cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 # 3. Build gem5 (in Docker, ~30min; use -j1 if OOM-killed during linking)
 cd gem5
 docker run --rm -v "$(pwd):/gem5" -w /gem5 \
-    -e PYTHONPATH=/usr/lib/python3.12/lib-dynload \
     gem5-run:local \
-    bash -c "scons build/VEGA_X86/gem5.opt -j4 GOLD_LINKER=True --linker=gold"
+    scons build/VEGA_X86/gem5.opt -j4
 cd ..
 
 # 4. Build QEMU (stock build; vfio-user-pci is built-in since QEMU 10.0)

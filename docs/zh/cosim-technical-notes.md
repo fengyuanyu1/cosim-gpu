@@ -348,7 +348,5 @@ screen -S qemu-cosim -X stuff 'modprobe amdgpu ip_block_mask=0x67 discovery=2 ra
   docker run --rm -v "$PWD:/gem5" -w /gem5 gem5-run:local \
     sh -c 'rm -f build/VEGA_X86/dev/amdgpu/<file>.o'
   docker run --rm -v "$PWD:/gem5" -w /gem5 \
-    -e PYTHONPATH=/usr/lib/python3.12/lib-dynload \
-    gem5-run:local scons build/VEGA_X86/gem5.opt -j1 \
-    GOLD_LINKER=True --linker=gold
+    gem5-run:local scons build/VEGA_X86/gem5.opt -j1
   ```

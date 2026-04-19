@@ -74,9 +74,8 @@ cd scripts && docker build -t gem5-run:local -f Dockerfile.run . && cd ..
 # 3. 编译 gem5（Docker 内，约 30 分钟；链接阶段 OOM 可改用 -j1）
 cd gem5
 docker run --rm -v "$(pwd):/gem5" -w /gem5 \
-    -e PYTHONPATH=/usr/lib/python3.12/lib-dynload \
     gem5-run:local \
-    bash -c "scons build/VEGA_X86/gem5.opt -j4 GOLD_LINKER=True --linker=gold"
+    scons build/VEGA_X86/gem5.opt -j4
 cd ..
 
 # 4. 编译 QEMU（标准构建；vfio-user-pci 自 QEMU 10.0 起内置）

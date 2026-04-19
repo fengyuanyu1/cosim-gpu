@@ -78,9 +78,8 @@ cd /home/zevorn/cosim/gem5
 # 使用 gpu-fs 镜像编译（amd64，包含所有依赖）
 docker run --rm \
     -v "$(pwd):/gem5" -w /gem5 \
-    -e PYTHONPATH=/usr/lib/python3.12/lib-dynload \
-    ghcr.io/gem5/gpu-fs:latest \
-    bash -c "scons build/VEGA_X86/gem5.opt -j4 GOLD_LINKER=True --linker=gold 2>&1"
+    gem5-run:local \
+    scons build/VEGA_X86/gem5.opt -j4
 ```
 
 > **注意：** 内存不足时降低并行度（`-j1` 或 `-j2`）。使用 gold linker 可减少链接阶段内存占用。
